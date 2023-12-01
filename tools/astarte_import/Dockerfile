@@ -45,6 +45,7 @@ RUN apt-get -qq install libssl1.1
 ARG BUILD_ENV=prod
 
 WORKDIR /app
+COPY ./run_import.sh /app/
 COPY --from=builder /app/_build/prod/rel/astarte_import .
 
-CMD ["sh", "-c", "./bin/astarte_import start ${REALM} ${XML_FILE}"]
+CMD /app/run_import.sh
