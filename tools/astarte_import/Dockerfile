@@ -18,6 +18,9 @@ ARG BUILD_ENV=prod
 
 ENV MIX_ENV=$BUILD_ENV
 
+ARG CASSANDRA_DB_HOST="127.0.0.1"
+ARG CASSANDRA_DB_PORT="9042"
+
 # Cache elixir deps
 ADD mix.exs mix.lock ./
 RUN mix do deps.get, deps.compile
@@ -48,4 +51,4 @@ WORKDIR /app
 COPY ./run_import.sh /app/
 COPY --from=builder /app/_build/prod/rel/astarte_import .
 
-CMD /app/run_import.sh
+CMD ["sh","/app/run_import.sh"]
