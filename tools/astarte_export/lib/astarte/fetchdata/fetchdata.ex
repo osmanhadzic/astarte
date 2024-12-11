@@ -22,13 +22,19 @@ defmodule Astarte.Export.FetchData do
   end
 
   def fetch_device_data(conn, realm, opts) do
-    with {:ok, result} <- Queries.stream_devices(conn, realm, opts),
-         [_device_data | _] = result_list <- Enum.to_list(result) do
-      updated_options = Keyword.put(opts, :paging_state, result.paging_state)
-      {:more_data, result_list, updated_options}
-    else
-      [] -> {:ok, :completed}
-      {:error, reason} -> {:error, reason}
+    case Queries.stream_devices(conn, realm, opts) do
+      {:ok, result} ->
+        result_list = Enum.to_list(result)
+
+        if result_list == [] do
+          {:ok, :completed}
+        else
+          updated_options = Keyword.put(opts, :paging_state, result.paging_state)
+          {:more_data, result_list, updated_options}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -43,35 +49,71 @@ defmodule Astarte.Export.FetchData do
 
     secret_bcrypt_hash = device_data.credentials_secret
 
-    first_registration = DateTime.to_iso8601(device_data.first_registration)
+    first_registration =
+      case device_data.first_registration do
+        nil -> ""
+        datetime -> DateTime.to_iso8601(datetime)
+      end
 
     inhibit_request =
-      device_data.inhibit_credentials_request
-      |> to_string
-      |> String.downcase()
+      case device_data.inhibit_credentials_request do
+        nil -> ""
+        value -> value |> to_string() |> String.downcase()
+      end
 
-    cert_serial = device_data.cert_serial
-    cert_aki = device_data.cert_aki
+    cert_serial =
+      case device_data.cert_serial do
+        nil -> ""
+        serial -> serial
+      end
 
-    first_credentials_request = DateTime.to_iso8601(device_data.first_credentials_request)
+    cert_aki =
+      case device_data.cert_aki do
+        nil -> ""
+        serial -> serial
+      end
+
+    first_credentials_request =
+      case device_data.first_credentials_request do
+        nil -> ""
+        datetime -> DateTime.to_iso8601(datetime)
+      end
 
     last_credentials_request_ip =
-      device_data.last_credentials_request_ip
-      |> :inet_parse.ntoa()
-      |> to_string()
+      case device_data.last_credentials_request_ip do
+        nil -> ""
+        ip -> ip |> :inet_parse.ntoa() |> to_string()
+      end
 
-    total_received_msgs = to_string(device_data.total_received_msgs)
+    total_received_msgs =
+      case device_data.total_received_msgs do
+        nil -> "0"
+        msgs -> to_string(msgs)
+      end
 
-    total_received_bytes = to_string(device_data.total_received_bytes)
+    total_received_bytes =
+      case device_data.total_received_bytes do
+        nil -> "0"
+        bytes -> to_string(bytes)
+      end
 
-    last_connection = DateTime.to_iso8601(device_data.last_connection)
+    last_connection =
+      case device_data.last_connection do
+        nil -> ""
+        datetime -> DateTime.to_iso8601(datetime)
+      end
 
-    last_disconnection = DateTime.to_iso8601(device_data.last_disconnection)
+    last_disconnection =
+      case device_data.last_disconnection do
+        nil -> ""
+        datetime -> DateTime.to_iso8601(datetime)
+      end
 
     last_seen_ip =
-      device_data.last_seen_ip
-      |> :inet_parse.ntoa()
-      |> to_string()
+      case device_data.last_seen_ip do
+        nil -> ""
+        ip -> ip |> :inet_parse.ntoa() |> to_string()
+      end
 
     device_attributes = [device_id: device_id]
 
@@ -112,49 +154,53 @@ defmodule Astarte.Export.FetchData do
     introspection = device_data.introspection
 
     mapped_interfaces =
-      Enum.reduce(introspection, [], fn {interface_name, major_version}, acc ->
-        {:ok, interface_description} =
-          Queries.fetch_interface_descriptor(conn, realm, interface_name, major_version, [])
+      if introspection == nil do
+        []
+      else
+        Enum.reduce(introspection, [], fn {interface_name, major_version}, acc ->
+          {:ok, interface_description} =
+            Queries.fetch_interface_descriptor(conn, realm, interface_name, major_version, [])
 
-        minor_version = interface_description.minor_version
-        interface_id = interface_description.interface_id
-        aggregation = interface_description.aggregation
-        storage = interface_description.storage
-        interface_type = interface_description.type
-        {:ok, mappings} = Queries.fetch_interface_mappings(conn, realm, interface_id, [])
-        mappings = Enum.sort_by(mappings, fn mapping -> mapping.endpoint end)
+          minor_version = interface_description.minor_version
+          interface_id = interface_description.interface_id
+          aggregation = interface_description.aggregation
+          storage = interface_description.storage
+          interface_type = interface_description.type
+          {:ok, mappings} = Queries.fetch_interface_mappings(conn, realm, interface_id, [])
+          mappings = Enum.sort_by(mappings, fn mapping -> mapping.endpoint end)
 
-        interface_attributes = [
-          interface_name: interface_name,
-          major_version: to_string(major_version),
-          minor_version: to_string(minor_version),
-          active: "true"
-        ]
+          interface_attributes = [
+            interface_name: interface_name,
+            major_version: to_string(major_version),
+            minor_version: to_string(minor_version),
+            active: "true"
+          ]
 
-        type =
-          case interface_type do
-            :datastream ->
-              case aggregation do
-                :individual -> :individual
-                :object -> :object
-              end
+          type =
+            case interface_type do
+              :datastream ->
+                case aggregation do
+                  :individual -> :individual
+                  :object -> :object
+                end
 
-            :properties ->
-              :properties
-          end
+              :properties ->
+                :properties
+            end
 
-        [
-          %{
-            attributes: interface_attributes,
-            interface_id: interface_id,
-            device_id: device_id,
-            storage: storage,
-            type: type,
-            mappings: mappings
-          }
-          | acc
-        ]
-      end)
+          [
+            %{
+              attributes: interface_attributes,
+              interface_id: interface_id,
+              device_id: device_id,
+              storage: storage,
+              type: type,
+              mappings: mappings
+            }
+            | acc
+          ]
+        end)
+      end
 
     {:ok, mapped_interfaces}
   end
